@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nlnfc-init"
+version = "0.2.0"
+license = "GPL-3.0-only"
+requires-python = ">=3.9"
+dependencies = [
+    "pyroute2",
+]
+
+[project.scripts]
+nlnfc-init = "nlnfc_init.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nlnfc_init"]
