@@ -14,14 +14,23 @@ nfc-nci.nix, e.g.::
 Everything needed to issue the equivalent vendor netlink command --
 which subcommand, and the payload without the redundant NCI header the
 kernel driver reconstructs itself -- is derived from that frame's
-header/OID bytes. Non-brace (``KEY=0xNN``) entries belong to the full
+header/OID bytes. Non-brace (``KEY=0xNN``) entries, and brace-enclosed
+entries that aren't comma-separated hex at all (e.g. upstream's
+colon-separated ``NXP_NFC_PROPRIETARY_CFG``, which configures the HAL's
+own discovery logic rather than being an NCI frame), belong to the full
 userspace NCI stack's own settings and are not meaningful here, so
 they're skipped rather than rejected, to keep whole config files
-copy-pasteable.
+copy-pasteable. A brace-enclosed entry that *does* parse as a byte list
+but looks malformed (bad declared length, unrecognized GID/OID) is
+reported as an error rather than silently skipped, since that's more
+likely a typo in an entry the caller meant for us to send.
 """
 
+import logging
 import re
 from dataclasses import dataclass
+
+log = logging.getLogger("nlnfc_init")
 
 NCI_GID_CORE = 0x00
 NCI_OID_CORE_SET_CONFIG = 0x02
@@ -49,8 +58,12 @@ def _parse_byte_array(name, raw):
     tokens = [t for t in tokens if t]
     try:
         frame = bytes(int(t, 16) for t in tokens)
-    except ValueError as err:
-        raise ConfigError(f"{name}: not a valid hex byte list: {raw!r}") from err
+    except ValueError:
+        # Not comma-separated hex at all (e.g. upstream's colon-separated
+        # NXP_NFC_PROPRIETARY_CFG) -- a HAL setting we don't understand,
+        # not a malformed NCI frame, so skip rather than error out.
+        log.debug("%s: not a comma-separated hex byte list, skipping: %r", name, raw)
+        return None
     if len(frame) < 3:
         raise ConfigError(f"{name}: frame too short to be [header, oid, len, ...]: {frame.hex()}")
 
@@ -87,5 +100,7 @@ def parse(path):
         name, raw = match.groups()
         if not raw.startswith("{"):
             continue  # a scalar HAL setting, not an NCI frame -- not ours
-        steps.append(_parse_byte_array(name, raw))
+        step = _parse_byte_array(name, raw)
+        if step is not None:
+            steps.append(step)
     return steps
