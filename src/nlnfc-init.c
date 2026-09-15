@@ -119,7 +119,16 @@ static int send_request(struct nfc_context *context, struct nl_msg *message)
 
 	while (!state.done) {
 		error = nl_recvmsgs(context->socket, callbacks);
-		if (error < 0) {
+		/*
+		 * When error_handler() returns NL_STOP for a kernel-side
+		 * NLMSG_ERROR, libnl propagates that same negative errno as
+		 * nl_recvmsgs()'s own return value -- state.done is already
+		 * true at that point, since error_handler() sets it before
+		 * returning. That is a real, successfully received response,
+		 * not a transport failure: only treat a negative return as
+		 * "couldn't receive at all" while state.done is still false.
+		 */
+		if (error < 0 && !state.done) {
 			fprintf(stderr, "unable to receive netlink response: %s\n",
 				nl_geterror(error));
 			error = -EIO;
