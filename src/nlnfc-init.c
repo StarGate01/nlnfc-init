@@ -30,6 +30,26 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+
+/*
+ * NFC_CMD_VENDOR / NFC_ATTR_VENDOR_* were added to the kernel's NFC netlink
+ * uapi well before the nxp-nci vendor-command support this tool relies on,
+ * but some distros still ship kernel headers predating them. These values
+ * are part of the stable netlink ABI (enum members are only ever appended,
+ * never renumbered), so it's safe to supply them here when missing.
+ */
+#ifndef NFC_CMD_VENDOR
+#define NFC_CMD_VENDOR 29
+#endif
+#ifndef NFC_ATTR_VENDOR_ID
+#define NFC_ATTR_VENDOR_ID 29
+#endif
+#ifndef NFC_ATTR_VENDOR_SUBCMD
+#define NFC_ATTR_VENDOR_SUBCMD 30
+#endif
+#ifndef NFC_ATTR_VENDOR_DATA
+#define NFC_ATTR_VENDOR_DATA 31
+#endif
 #include <stdlib.h>
 #include <string.h>
 
