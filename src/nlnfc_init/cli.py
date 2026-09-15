@@ -117,16 +117,29 @@ def main():
     parser.add_argument(
         "--reset", action="store_true", help="power-cycle the device before initializing it"
     )
-    parser.add_argument("-q", "--quiet", action="store_true", help="only log warnings and errors")
     parser.add_argument("-v", "--verbose", action="store_true", help="log raw command/response detail")
     args = parser.parse_args()
 
     # Configure only our own logger, not the root logger: -v is meant to
     # show *our* per-command decisions, not pyroute2's internal socket
     # chatter, which logs at DEBUG under its own loggers.
-    level = logging.WARNING if args.quiet else logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(format="%(message)s")
-    log.setLevel(level)
+    #
+    # Split by severity rather than sending everything to stderr (what
+    # logging.basicConfig() would do): systemd/journald tags lines by
+    # which stream they arrived on, so under a plain single-stream setup
+    # every routine step ACK would be tagged the same as a real failure,
+    # and `systemctl status` would highlight successful runs as if they'd
+    # errored.
+    formatter = logging.Formatter("%(message)s")
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.addFilter(lambda record: record.levelno < logging.WARNING)
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.WARNING)
+    log.addHandler(stdout_handler)
+    log.addHandler(stderr_handler)
+    log.setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
     if args.list:
         return cmd_list()

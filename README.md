@@ -39,7 +39,7 @@ nlnfc-init --acpi-hid HID --config PATH [--vendor-id HEX] [--reset] [-q|-v]
 - `--acpi-hid` / `--config` — required for priming. `--acpi-hid` identifies the device by its ACPI HID (e.g. `NXP1001`), read from `/sys/class/nfc/nfcN/device/firmware_node/hid` and resolved to a netlink device index at runtime — not by that index directly, since it's just enumeration order and can shift across boots (more adapters showing up, driver/probe-order changes) while the HID stays fixed to the physical chip
 - `--vendor-id` — OUI to address (default `0x006037`, NXP)
 - `--reset` — power-cycle the device first; only while NFC consumers (e.g. pcscd) are stopped, since the kernel refuses to power down an adapter that's actively polling or has an active target
-- `-q/--quiet` — warnings and errors only; `-v/--verbose` — log raw command/response detail
+- `-v/--verbose` — log raw command/response detail
 
 Every step logs its ACK/NACK and, after power-up, the device's reported power/protocol state.
 
@@ -55,7 +55,7 @@ Before=pcscd.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nlnfc-init --acpi-hid NXP1001 --config /etc/nlnfc-init/npc300.conf --quiet
+ExecStart=/usr/local/bin/nlnfc-init --acpi-hid NXP1001 --config /etc/nlnfc-init/npc300.conf
 RemainAfterExit=yes
 
 [Install]
@@ -68,7 +68,7 @@ WantedBy=multi-user.target
 #!/bin/sh
 case "$1/$2" in
 	post/suspend|post/hibernate|post/hybrid-sleep|post/suspend-then-hibernate)
-		/usr/local/bin/nlnfc-init --device 0 --config /etc/nlnfc-init/npc300.conf --quiet || true
+		/usr/local/bin/nlnfc-init --acpi-hid NXP1001 --config /etc/nlnfc-init/npc300.conf || true
 		;;
 esac
 
