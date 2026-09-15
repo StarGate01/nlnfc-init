@@ -1,6 +1,8 @@
 import argparse
 import errno
+import glob
 import logging
+import os
 import sys
 
 from nlnfc_init import config
@@ -10,6 +12,40 @@ log = logging.getLogger("nlnfc_init")
 
 DEFAULT_VENDOR_ID = 0x006037  # NXP Semiconductors OUI
 
+SYSFS_NFC_CLASS = "/sys/class/nfc"
+
+
+def _acpi_hid(nfc_index):
+    """Return the ACPI hardware ID backing an nfc<N> device, or None.
+
+    The netlink device index itself is just enumeration order -- it can
+    shift across boots if more adapters show up, or after a kernel/driver
+    change. The ACPI HID is the chip's actual identity as wired into the
+    board, so it's what --acpi-hid matches against instead.
+    """
+    hid_path = os.path.join(SYSFS_NFC_CLASS, f"nfc{nfc_index}", "device", "firmware_node", "hid")
+    try:
+        with open(hid_path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def resolve_device(acpi_hid):
+    """Return the netlink device index whose ACPI HID matches acpi_hid."""
+    matches = []
+    for entry in sorted(glob.glob(os.path.join(SYSFS_NFC_CLASS, "nfc*"))):
+        index = int(os.path.basename(entry)[len("nfc") :])
+        if _acpi_hid(index) == acpi_hid:
+            matches.append(index)
+    if not matches:
+        raise LookupError(
+            f"no NFC device with ACPI HID {acpi_hid!r} found under {SYSFS_NFC_CLASS} (see --list)"
+        )
+    if len(matches) > 1:
+        raise LookupError(f"multiple NFC devices with ACPI HID {acpi_hid!r}: nfc{matches}")
+    return matches[0]
+
 
 def cmd_list():
     with NFCSocket() as sock:
@@ -17,8 +53,9 @@ def cmd_list():
         found = False
         for index, name, powered, protocols in sock.list_devices():
             found = True
+            hid = _acpi_hid(index) or "?"
             print(
-                f"nfc{index}: {name or '?'}  "
+                f"nfc{index}: {name or '?'}  acpi-hid={hid}  "
                 f"powered={bool(powered)} protocols=0x{protocols or 0:02x}"
             )
         if not found:
@@ -66,7 +103,10 @@ def main():
         description="Prime an NFC controller with a proprietary NCI command sequence."
     )
     parser.add_argument("--list", action="store_true", help="list NFC devices and exit")
-    parser.add_argument("--device", type=int, help="NFC device index to initialize (see --list)")
+    parser.add_argument(
+        "--acpi-hid",
+        help="ACPI hardware ID of the NFC device to initialize, e.g. NXP1001 (see --list)",
+    )
     parser.add_argument("--config", help="NCI command config file (see conf/npc300.conf)")
     parser.add_argument(
         "--vendor-id",
@@ -91,8 +131,8 @@ def main():
     if args.list:
         return cmd_list()
 
-    if args.device is None or not args.config:
-        parser.error("--device and --config are required (or pass --list)")
+    if not args.acpi_hid or not args.config:
+        parser.error("--acpi-hid and --config are required (or pass --list)")
 
     try:
         steps = config.parse(args.config)
@@ -101,6 +141,11 @@ def main():
     if not steps:
         log.warning("%s: no NCI command frames found", args.config)
 
+    try:
+        device = resolve_device(args.acpi_hid)
+    except LookupError as err:
+        parser.error(str(err))
+
     with NFCSocket() as sock:
         sock.open()
-        return prime_device(sock, args.device, steps, args.vendor_id, args.reset)
+        return prime_device(sock, device, steps, args.vendor_id, args.reset)

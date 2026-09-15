@@ -32,11 +32,11 @@ nlnfc-init --list
 
 ```
 nlnfc-init --list
-nlnfc-init --device N --config PATH [--vendor-id HEX] [--reset] [-q|-v]
+nlnfc-init --acpi-hid HID --config PATH [--vendor-id HEX] [--reset] [-q|-v]
 ```
 
-- `--list` — show NFC devices and their index (`--device` isn't auto-detected)
-- `--device` / `--config` — required for priming; see above
+- `--list` — show NFC devices, their kernel netlink index, and (when available) their ACPI hardware ID
+- `--acpi-hid` / `--config` — required for priming. `--acpi-hid` identifies the device by its ACPI HID (e.g. `NXP1001`), read from `/sys/class/nfc/nfcN/device/firmware_node/hid` and resolved to a netlink device index at runtime — not by that index directly, since it's just enumeration order and can shift across boots (more adapters showing up, driver/probe-order changes) while the HID stays fixed to the physical chip
 - `--vendor-id` — OUI to address (default `0x006037`, NXP)
 - `--reset` — power-cycle the device first; only while NFC consumers (e.g. pcscd) are stopped, since the kernel refuses to power down an adapter that's actively polling or has an active target
 - `-q/--quiet` — warnings and errors only; `-v/--verbose` — log raw command/response detail
@@ -55,7 +55,7 @@ Before=pcscd.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/nlnfc-init --device 0 --config /etc/nlnfc-init/npc300.conf --quiet
+ExecStart=/usr/local/bin/nlnfc-init --acpi-hid NXP1001 --config /etc/nlnfc-init/npc300.conf --quiet
 RemainAfterExit=yes
 
 [Install]
