@@ -1,20 +1,14 @@
 # nlnfc-init
 
-`nlnfc-init` primes NXP NPC300 (NXP1001) NFC controllers over the Linux NFC netlink interface, applying the proprietary NCI configuration the chip needs for a stable RF connection.
+Primes NXP NPC300 (NXP1001) NFC controllers over Linux NFC netlink with the proprietary NCI config they need for a stable RF connection. Without it, tags are detected but longer data exchanges drop out.
 
-## Why this exists
+Run as a oneshot at boot and after resume (the config is volatile). Consumers like [ifdnlnfc](https://github.com/jurajsarinay/ifdnlnfc) then just reuse whatever state they find the adapter in — see [issue #2](https://github.com/jurajsarinay/ifdnlnfc/issues/2).
 
-See [jurajsarinay/ifdnlnfc#2](https://github.com/jurajsarinay/ifdnlnfc/issues/2). Without this configuration the NPC300 detects tags but longer-running data exchanges drop out. Platform/vendor initialization like this does not belong inside a PC/SC IFD driver (it has no business knowing about proprietary EEPROM layouts or voltage configuration), so it lives here instead as a standalone oneshot tool: run it once at boot (and again after resume, since the chip loses its volatile configuration across suspend) and every NFC consumer, including [ifdnlnfc](https://github.com/jurajsarinay/ifdnlnfc), just reuses whatever state it finds the adapter in.
+Requires kernel support for forwarding vendor NCI commands over netlink, not yet upstream: [feat/nxp-nci-vendor](https://github.com/StarGate01/linux/tree/feat/nxp-nci-vendor).
 
-This requires the kernel's `nxp-nci` driver to support forwarding vendor NCI commands over netlink (`NFC_CMD_VENDOR` / `NFC_ATTR_VENDOR_*`), which is not yet upstream; see the kernel patch below.
+## Build
 
-## Prerequisites
-
-Netlink Protocol Library Suite: <https://www.infradead.org/~tgr/libnl/>
-
-On Debian, install `libnl-3-dev libnl-genl-3-dev`.
-
-## Building
+Needs `libnl-3-dev libnl-genl-3-dev` (Debian) or use the provided Nix flake (`nix develop`).
 
 ```sh
 mkdir -p build && cd build
@@ -22,8 +16,6 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 sudo make install
 ```
-
-A Nix flake is provided for a development shell with all dependencies (`nix develop`, or `direnv allow` with the included `.envrc`).
 
 ## Usage
 
@@ -37,15 +29,11 @@ nlnfc-init [OPTIONS]
   -h, --help          display this help
 ```
 
-Without `--device`, every adapter under `/sys/class/nfc` identified as an NXP1001/NPC300 is initialized. `--force` is only accepted together with `--device`, since it bypasses the safety check that keeps this tool from sending NXP-proprietary commands to unrelated hardware.
+Without `--device`, every NXP1001/NPC300 adapter under `/sys/class/nfc` is initialized. `--force` requires `--device`. Only use `--reset` while NFC consumers (e.g. pcscd) are stopped.
 
-Use `--reset` only while NFC consumers such as pcscd are stopped: it powers the adapter down first, and the kernel refuses to power down an adapter that is actively polling or has an active target (`-EBUSY`).
+## Boot and resume
 
-## Running at boot and on resume
-
-Install the tool, then create the two files below to run it once at boot and again on resume. Adjust the `/usr/local/bin/nlnfc-init` path in both if you installed the binary somewhere else.
-
-`/etc/systemd/system/nlnfc-init.service` — runs once at boot, ordered before `pcscd.service` so the adapter is already configured by the time ifdnlnfc's IFD driver opens it:
+`/etc/systemd/system/nlnfc-init.service`, then `systemctl enable` it:
 
 ```ini
 [Unit]
@@ -62,9 +50,7 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 ```
 
-Enable it with `sudo systemctl enable nlnfc-init.service`.
-
-`/usr/lib/systemd/system-sleep/nlnfc-init-resume.sh` (root-owned, mode `0755`) — re-runs the tool after suspend/hibernate, since the controller loses its volatile configuration across suspend:
+`/usr/lib/systemd/system-sleep/nlnfc-init-resume.sh`, mode `0755`:
 
 ```sh
 #!/bin/sh
@@ -76,9 +62,3 @@ esac
 
 exit 0
 ```
-
-See `man systemd-suspend.service` for details on system sleep hooks.
-
-## Kernel patch
-
-This tool depends on `nxp-nci` vendor-command support that is not yet upstream. See the `feat/nxp-nci-vendor` branch of the kernel tree for the required patch (`nxp-nci: Implement netlink vendor command support`, plus the follow-up `nxp-nci: Serialize and validate vendor netlink commands` hardening it).
