@@ -43,17 +43,41 @@ Use `--reset` only while NFC consumers such as pcscd are stopped: it powers the 
 
 ## Running at boot and on resume
 
-Install the tool, then install the units in `systemd/`:
+Install the tool, then create the two files below to run it once at boot and again on resume. Adjust the `/usr/local/bin/nlnfc-init` path in both if you installed the binary somewhere else.
 
-```sh
-sudo install -m 0644 systemd/nlnfc-init.service /etc/systemd/system/
-sudo systemctl enable nlnfc-init.service
+`/etc/systemd/system/nlnfc-init.service` — runs once at boot, ordered before `pcscd.service` so the adapter is already configured by the time ifdnlnfc's IFD driver opens it:
 
-sudo install -m 0755 systemd/nlnfc-init-resume.sh \
-    /usr/lib/systemd/system-sleep/nlnfc-init-resume.sh
+```ini
+[Unit]
+Description=Prime NXP NPC300/NXP1001 NFC controller
+After=systemd-udev-settle.service
+Before=pcscd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nlnfc-init --quiet
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-`nlnfc-init.service` runs once at boot, ordered before `pcscd.service` so the adapter is already configured by the time ifdnlnfc's IFD driver opens it. The system-sleep hook re-runs the tool after suspend/hibernate for the same reason. Both simply call `nlnfc-init --quiet`; adjust the install path in those files if you installed the binary somewhere other than `/usr/local/bin`.
+Enable it with `sudo systemctl enable nlnfc-init.service`.
+
+`/usr/lib/systemd/system-sleep/nlnfc-init-resume.sh` (root-owned, mode `0755`) — re-runs the tool after suspend/hibernate, since the controller loses its volatile configuration across suspend:
+
+```sh
+#!/bin/sh
+case "$1/$2" in
+	post/suspend|post/hibernate|post/hybrid-sleep|post/suspend-then-hibernate)
+		/usr/local/bin/nlnfc-init --quiet || true
+		;;
+esac
+
+exit 0
+```
+
+See `man systemd-suspend.service` for details on system sleep hooks.
 
 ## Kernel patch
 
