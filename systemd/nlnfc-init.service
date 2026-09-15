@@ -1,0 +1,12 @@
+[Unit]
+Description=Prime NXP NPC300/NXP1001 NFC controller
+After=systemd-udev-settle.service
+Before=pcscd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nlnfc-init --quiet
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
